@@ -1,0 +1,299 @@
+<!-- ***************** gRPC Register function *********************** -->
+<script type="text/x-red" data-template-name="grpc-call">
+    <div class="form-row">
+        <label for="node-input-server" style="width: 110px;"><i class="fa fa-bookmark"></i> Server</label>
+        <input type="text" id="node-input-server" placeholder="Server URL (ex. localhost:5001)">
+    </div>	
+    <div class="form-row">
+        <label for="node-input-name" style="width: 110px;"><i class="fa fa-tag"></i> Name</label>
+        <input type="text" id="node-input-name" placeholder="Name">
+    </div>
+	<div class="form-row">
+        <label for="node-input-protoPackage" style="width: 110px;"><i class="fa fa-envelope"></i> Package</label>
+        <input type="text" id="node-input-protoPackage"></input>
+    </div>
+    <div class="form-row">
+        <label for="node-input-service" style="width: 110px;"><i class="fa fa-envelope"></i> Service</label>
+        <input type="text" id="node-input-service" placeholder="Service name">
+    </div>
+    <div class="form-row">
+        <label for="node-input-method" style="width: 110px;"><i class="fa fa-tag"></i> Method</label>
+        <input type="text" id="node-input-method" placeholder="Method name">
+    </div>
+    <div id="mutualTls">
+        <div class="form-row">
+            <button id="keygen"">Generate bellow</button>
+          </div>
+        <div class="form-row">
+            <label for="node-input-chain">Chain Cert</label>
+            <textarea id="node-input-chain" placeholder="Chain Cert" rows="10" style="width: 100%"></textarea>
+        </div>
+        <div class="form-row">
+            <label for="node-input-key">Private Key</label>
+            <textarea id="node-input-key" placeholder="Private Key" rows="10" style="width: 100%"></textarea>
+        </div> 
+    </div>
+</script>
+
+<script type="text/x-red" data-help-name="grpc-call">
+    <p>Sends gRPC requests and returns the response.</p>
+    <h3>Inputs</h3>
+    <dl class="message-properties">
+        <dt class="optional">service <span class="property-type">string</span></dt>
+        <dd>If not configured in the node, this optional property sets the service to request.</dd>
+        <dt class="optional">method <span class="property-type">string</span></dt>
+        <dd>If not configured in the node, this optional property sets the method of the service to request.</dd>
+        <dt class="optional">payload</dt>
+        <dd>Sent as the body of the request.</dd>
+    </dl>
+    <h3>Outputs</h3>
+    <dl class="message-properties">
+        <dt>payload <span class="property-type">string | object</span></dt>
+        <dd>The body of the response.</dd>
+    </dl>
+</script>
+
+<script type="text/javascript">
+    RED.nodes.registerType('grpc-call',{
+        category: 'function',
+        color:"#2DA6B0",
+        defaults: {
+            name: {value:""},
+			protoPackage: {value:"",required:true},
+            server: {type:"grpc-server",required:true},
+            service: {value:"",required:true},
+            method: {value:"",required:true},
+            chain: { value: '' },
+            key: { value: '' },
+        },
+        inputs:1,
+        outputs:1,
+        icon: "grpc.svg",
+        label: function() {
+            return this.name||"gRPC Call";
+        },
+        labelStyle: function() {
+            return (this.name)?"node_label_italic":"";
+        },
+        oneditsave: function(){
+            this.protoPackage = $("#node-input-protoPackage").val();
+            this.service = $("#node-input-service").val();
+            this.method = $("#node-input-method").val();
+        },
+        oneditprepare: function(){
+            let pkg_input = $("#node-input-protoPackage");
+            let svc_input = $("#node-input-service");
+            let method_input = $("#node-input-method");
+            let that = this;
+
+            pkg_input.typedInput({
+                type:"package", 
+                types:[{
+                    value: "package",
+                    options: []
+                }]
+            });
+            pkg_input.typedInput('disable');
+
+            svc_input.typedInput({
+                type:"service", 
+                types:[{
+                    value: "service",
+                    options: []
+                }]
+            });
+            svc_input.typedInput('disable');
+
+            method_input.typedInput({
+                type:"method", 
+                types:[{
+                    value: "method",
+                    options: []
+                }]
+            });
+
+            if(this.server){
+                let current_svr = RED.nodes.node(that.server);
+                let opt_pkg_list = [];
+                current_svr.protoPackages.forEach((p)=>{
+                    opt_pkg_list.push({value:p, label:p});
+                });
+                
+                pkg_input.typedInput('types', [{
+                        value: that.protoPackage,
+                        options: opt_pkg_list
+                    }]
+                );
+                pkg_input.typedInput('value', that.protoPackage);
+                pkg_input.typedInput('enable');
+
+                if(this.protoPackage){
+                    $.getJSON(`/grpc-services?svr=${current_svr.name}&pkg=${that.protoPackage}`, (data)=>{
+                        let opt_svc_list = [];
+                        data.forEach((_value, key, map)=>{
+                            opt_svc_list.push({value:_value, label:_value});
+                        });
+
+                        svc_input.typedInput('types', [{
+                            value: that.service,
+                            options: opt_svc_list
+                        }]);
+                        svc_input.typedInput('value', that.service);
+                        svc_input.typedInput('enable');
+
+                        if(this.service){
+                            $.getJSON(`/grpc-services/methods?svr=${current_svr.name}&pkg=${that.protoPackage}&svc=${that.service}`, (data)=>{
+                                let opt_method_list = [];
+                                data.forEach((_value, key, map)=>{
+                                    opt_method_list.push({value:_value, label:_value});
+                                });
+
+                                method_input.typedInput('types', [{
+                                    value: that.method,
+                                    options: opt_method_list
+                                }]);
+                            });
+
+                            method_input.typedInput('value', that.method);
+                            method_input.typedInput('enable');
+                        }
+                        else
+                            method_input.typedInput('disable');
+                    });
+                }else{
+                    svc_input.typedInput('disable');
+                }                
+            }
+            else{                
+                method_input.typedInput('disable');
+            }
+
+            $("#node-input-server").change(function(){
+                var config = RED.nodes.node($(this).val());
+    
+                if (config && config.mutualTls){
+                    $("#mutualTls").show();    
+                } else {
+                    $("#mutualTls").hide();
+                }
+            })
+
+            $("#node-input-server").change(function(){
+                let config = RED.nodes.node($(this).val());
+                let proto_pkgs = $("#node-input-protoPackage");
+
+                if(config){
+                    let opt_pkg_list = [];
+                    config.protoPackages.forEach((p)=>{
+                        opt_pkg_list.push({value:p, label:p});
+                    });
+
+                    proto_pkgs.typedInput('types', [{
+                        value: "package",
+                        options: opt_pkg_list
+                    }]);
+
+                    proto_pkgs.typedInput('enable');
+                }else{
+                    proto_pkgs.typedInput('types', [{
+                        value: "package",
+                        options: []
+                    }]);
+
+                    proto_pkgs.typedInput('disable');
+                }
+            });
+            
+            // $("#node-input-protoPackage").change(function(){                
+            //     this.protoPackage = $(this).val();
+            // });
+
+            $("#node-input-protoPackage").change(function(){
+                let current_svr = RED.nodes.node($("#node-input-server").val());
+                let current_pkg = $(this).val();
+                let svc_input = $("#node-input-service");
+
+                if(current_pkg){
+                    $.getJSON(`/grpc-services?svr=${current_svr.name}&pkg=${current_pkg}`, (data)=>{
+                        let opt_svc_list = [];
+                        data.forEach((_value, key, map)=>{
+                            opt_svc_list.push({value:_value, label:_value});
+                        });
+                        console.log(`Available Services:\n${JSON.stringify(opt_svc_list)}`)
+                        svc_input.typedInput('types', []);
+                        svc_input.typedInput('types', [{
+                            value: "service",
+                            options: opt_svc_list
+                        }]);
+
+                        svc_input.typedInput('enable');
+                    });
+                }else{
+                    svc_input.typedInput('types', [{
+                        value: "service",
+                        options: []
+                    }]);
+
+                    svc_input.typedInput('disable');
+                }
+            });           
+
+            // $("#node-input-service").change(function(){
+            //     this.service = $(this).val();
+            // });
+
+            $("#node-input-service").change(function(){
+                let current_svr = RED.nodes.node($("#node-input-server").val());
+                let current_svc = $(this).val();
+                let method_input = $("#node-input-method");
+                let current_pkg = $("#node-input-protoPackage").val();
+
+                if(current_svc){                    
+                    $.getJSON(`/grpc-services/methods?svr=${current_svr.name}&pkg=${current_pkg}&svc=${current_svc}`, (data)=>{
+                        let opt_method_list = [];
+                        data.forEach((_value, key, map)=>{
+                            opt_method_list.push({value:_value, label:_value});
+                        });
+
+                        method_input.typedInput('types', []);
+                        method_input.typedInput('types', [{
+                            value: "method",
+                            options: opt_method_list
+                        }]);
+
+                        method_input.typedInput('enable');
+                    });
+                }else{
+                    method_input.typedInput('types', [{
+                        value: "method",
+                        options: []
+                    }]);
+
+                    method_input.typedInput('disable');
+                }
+            });
+
+            $("#keygen").click(e => {
+                let config = RED.nodes.node($("#node-input-server").val());
+
+                if (!config){
+                    alert("Please choose a server first!");
+                    return;
+                }
+                
+                const { caPrivateKey, cacert, mutualTls } = config;
+                const server = document.getElementById('node-input-server').value;
+                const name = document.getElementById('node-input-name').value;
+
+                if (!name || !server || !caPrivateKey || !cacert){
+                    alert("Please choose a properly configured server and fill all the fields!");
+                    return;
+                }
+
+                const { cert, privateKey } = certGen(cacert, caPrivateKey , server, name);
+                document.getElementById('node-input-chain').value = cert;
+                document.getElementById('node-input-key').value = privateKey;
+            })
+        }
+    });
+</script>
